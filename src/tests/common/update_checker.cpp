@@ -55,14 +55,14 @@ TEST_CASE("Lichii ignores dev builds and malformed release tags", "[updater]") {
 
 TEST_CASE("Lichii selects only the matching platform and PGO variant", "[updater]") {
     const std::string platform =
-        GENERATE("windows-x86_64", "windows-x86_64-pgo", "linux-x86_64", "linux-x86_64-pgo",
-                 "linux-aarch64", "linux-aarch64-pgo", "macos-arm64");
+        GENERATE("windows-x86_64", "windows-x86_64-pgo", "windows-arm64", "linux-x86_64",
+                 "linux-x86_64-pgo", "linux-aarch64", "linux-aarch64-pgo", "macos-arm64");
     auto release = MakeRelease("build-71", "unrelated.zip");
     for (const auto name :
-         {"windows-x86_64.zip", "windows-x86_64-pgo.zip", "linux-x86_64.tar.gz",
-          "linux-x86_64-pgo.tar.gz", "linux-aarch64.tar.gz", "linux-aarch64-pgo.tar.gz",
-          "macos-arm64.zip", "linux-x86_64.AppImage", "linux-x86_64-pgo.AppImage",
-          "linux-aarch64.AppImage", "linux-aarch64-pgo.AppImage"}) {
+         {"windows-x86_64.zip", "windows-x86_64-pgo.zip", "windows-arm64.zip",
+          "linux-x86_64.tar.gz", "linux-x86_64-pgo.tar.gz", "linux-aarch64.tar.gz",
+          "linux-aarch64-pgo.tar.gz", "macos-arm64.zip", "linux-x86_64.AppImage",
+          "linux-x86_64-pgo.AppImage", "linux-aarch64.AppImage", "linux-aarch64-pgo.AppImage"}) {
         release.assets.push_back(
             "https://github.com/zortos293/Lichii/releases/download/build-71/lichii-" +
             std::string{name});
