@@ -85,9 +85,9 @@ jobs:
           # The Linux -pgo builds are the same programs compiled by clang against the repo's
           # eglantine.profdata. Eden's profile (Eden-CI/PGO) comes from Switch 1 games: with it Mario
           # Kart World ran at about half the speed of the normal build, with eglantine.profdata at
-          # about the same speed. Both Windows builds are clang-cl with ThinLTO; windows-x86_64-pgo
-          # adds lichii-windows.profdata, an MSVC-ABI profile trained on Ocarina of Time (see
-          # docs/CI.md). MSVC still builds for development.
+          # about the same speed. Windows x86_64 builds are clang-cl with ThinLTO;
+          # windows-x86_64-pgo adds lichii-windows.profdata, an MSVC-ABI profile trained on
+          # Ocarina of Time (see docs/CI.md). MSVC still builds for development.
           - platform: linux-x86_64-pgo
             runner: ubuntu-24.04
             pgo: true
@@ -97,6 +97,8 @@ jobs:
             runner: windows-2022
             pgo: true
             profile: lichii-windows.profdata
+          - platform: windows-arm64
+            runner: windows-11-arm
           - platform: linux-aarch64
             runner: ubuntu-24.04-arm
           - platform: linux-aarch64-pgo
@@ -202,6 +204,8 @@ jobs:
       - name: Set up MSVC
         if: startsWith(matrix.platform, 'windows')
         uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.platform == 'windows-arm64' && 'amd64_arm64' || 'amd64' }}
 
       # clang-cl compiles against the MSVC headers, libraries and SDK that the previous step put
       # on PATH; only the compiler, linker and archiver come from this LLVM.
@@ -215,9 +219,9 @@ jobs:
         uses: jurplel/install-qt-action@v4
         with:
           version: "6.8.3"
-          host: windows
+          host: ${{ matrix.platform == 'windows-arm64' && 'windows_arm64' || 'windows' }}
           target: desktop
-          arch: win64_msvc2022_64
+          arch: ${{ matrix.platform == 'windows-arm64' && 'win64_msvc2022_arm64' || 'win64_msvc2022_64' }}
           modules: qtcharts
           cache: true
 
@@ -320,6 +324,13 @@ jobs:
             flags+=" -Wno-error=profile-instr-out-of-date -Wno-error=profile-instr-unprofiled"
             flags+=" -Wno-error=backend-plugin"
           fi
+          target_flags=()
+          if [[ '${{ matrix.platform }}' == 'windows-arm64' ]]; then
+            target_flags+=(
+              -DCMAKE_C_COMPILER_TARGET=aarch64-pc-windows-msvc
+              -DCMAKE_CXX_COMPILER_TARGET=aarch64-pc-windows-msvc
+            )
+          fi
           cmake -S . -B build/release -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTING=OFF \
@@ -338,6 +349,7 @@ jobs:
             -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
             "-DCMAKE_C_COMPILER=$LLVM_ROOT/bin/clang-cl.exe" \
             "-DCMAKE_CXX_COMPILER=$LLVM_ROOT/bin/clang-cl.exe" \
+            "${target_flags[@]}" \
             "-DCMAKE_LINKER=$LLVM_ROOT/bin/lld-link.exe" \
             "-DCMAKE_AR=$LLVM_ROOT/bin/llvm-lib.exe" \
             "-DCMAKE_C_FLAGS=$flags" \
@@ -730,6 +742,7 @@ jobs:
 
           $({
             row "amd64 / x86_64" "$(link zip lichii-windows-x86_64.zip)" "$(link "PGO zip" lichii-windows-x86_64-pgo.zip)" "Both built with clang-cl and ThinLTO; the PGO zip adds a profile trained on Ocarina of Time"
+            row "ARM64" "$(link zip lichii-windows-arm64.zip)" "" "Built with clang-cl and ThinLTO for Windows on ARM"
           } | table)
 
           ## macOS
