@@ -68,6 +68,30 @@ double EnvSeconds(const char* name, double fallback) {
     return text != nullptr ? std::strtod(text, nullptr) : fallback;
 }
 
+DWORD64 ProgramCounter(const CONTEXT& context) {
+#if defined(_M_ARM64)
+    return context.Pc;
+#else
+    return context.Rip;
+#endif
+}
+
+DWORD64 StackPointer(const CONTEXT& context) {
+#if defined(_M_ARM64)
+    return context.Sp;
+#else
+    return context.Rsp;
+#endif
+}
+
+void SetProgramCounter(CONTEXT& context, DWORD64 pc) {
+#if defined(_M_ARM64)
+    context.Pc = pc;
+#else
+    context.Rip = pc;
+#endif
+}
+
 std::vector<std::string> SplitNames(const char* text) {
     std::vector<std::string> names;
     std::string current;
@@ -150,28 +174,33 @@ unsigned Walk(CONTEXT context, std::array<DWORD64, MaxDepth>& frames, const NT_T
     if (tib == nullptr) {
         return 0;
     }
-    const auto on_stack = [tib](DWORD64 rsp) {
-        return rsp >= reinterpret_cast<DWORD64>(tib->StackLimit) &&
-               rsp + 8 <= reinterpret_cast<DWORD64>(tib->StackBase) && (rsp & 7) == 0;
+    const auto on_stack = [tib](DWORD64 sp) {
+        return sp >= reinterpret_cast<DWORD64>(tib->StackLimit) &&
+               sp + 8 <= reinterpret_cast<DWORD64>(tib->StackBase) && (sp & 7) == 0;
     };
     unsigned depth = 0;
-    while (depth < MaxDepth && context.Rip != 0 && on_stack(context.Rsp)) {
-        frames[depth++] = context.Rip;
+    while (depth < MaxDepth && ProgramCounter(context) != 0 && on_stack(StackPointer(context))) {
+        frames[depth++] = ProgramCounter(context);
         DWORD64 image_base{};
-        const PRUNTIME_FUNCTION function = RtlLookupFunctionEntry(context.Rip, &image_base, nullptr);
+        const PRUNTIME_FUNCTION function =
+            RtlLookupFunctionEntry(ProgramCounter(context), &image_base, nullptr);
         if (function == nullptr) {
-            // A leaf function (no unwind data): its return address is on top of the stack. JIT
-            // code has none either; past the first frame, stop there.
+            // A leaf function has its return address in LR on ARM64 and on the stack otherwise.
+            // JIT code has no unwind data either; past the first frame, stop there.
             if (depth != 1) {
                 break;
             }
-            context.Rip = *reinterpret_cast<const DWORD64*>(context.Rsp);
+#if defined(_M_ARM64)
+            SetProgramCounter(context, context.Lr);
+#else
+            SetProgramCounter(context, *reinterpret_cast<const DWORD64*>(StackPointer(context)));
             context.Rsp += 8;
+#endif
             continue;
         }
         PVOID handler_data{};
         DWORD64 establisher_frame{};
-        RtlVirtualUnwind(UNW_FLAG_NHANDLER, image_base, context.Rip, function, &context,
+        RtlVirtualUnwind(UNW_FLAG_NHANDLER, image_base, ProgramCounter(context), function, &context,
                          &handler_data, &establisher_frame, nullptr);
     }
     return depth;
